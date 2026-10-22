@@ -2,3 +2,7 @@
 nginx/certs/*.key
 nginx/certs/*.pem
 node_modules/
+
+# Private TLS keys and local backups
+nginx/certs/*.key
+*.bak
