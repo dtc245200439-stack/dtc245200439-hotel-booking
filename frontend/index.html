@@ -1,0 +1,191 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hotel Booking - Đặt phòng khách sạn</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f7fb;
+      color: #1f2937;
+    }
+    header {
+      background: #12345a;
+      color: white;
+      padding: 28px 8%;
+    }
+    header h1 { margin: 0 0 8px; }
+    main { max-width: 1100px; margin: 32px auto; padding: 0 20px; }
+    .intro, .room, .panel {
+      background: white;
+      border-radius: 12px;
+      padding: 22px;
+      box-shadow: 0 3px 14px #0000000d;
+    }
+    .rooms {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 18px;
+      margin: 20px 0;
+    }
+    .room h3 { color: #12345a; }
+    .price { font-size: 21px; font-weight: bold; color: #087f5b; }
+    button {
+      border: 0;
+      border-radius: 7px;
+      padding: 11px 16px;
+      background: #1769aa;
+      color: white;
+      cursor: pointer;
+    }
+    input, select {
+      display: block;
+      width: 100%;
+      padding: 11px;
+      margin: 8px 0 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
+    }
+    .status { color: #475569; }
+    footer { text-align: center; padding: 25px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🏨 Hotel Booking</h1>
+    <div>Đặt phòng dễ dàng — nghỉ dưỡng thoải mái</div>
+  </header>
+
+  <main>
+    <section class="intro">
+      <h2>Khám phá phòng nghỉ</h2>
+      <p>Chọn phòng phù hợp với nhu cầu của bạn.</p>
+      <p id="connection" class="status">Đang kết nối hệ thống...</p>
+    </section>
+
+    <section>
+      <h2>Danh sách phòng</h2>
+      <div id="rooms" class="rooms">Đang tải danh sách phòng...</div>
+    </section>
+
+    <section class="panel">
+      <h2>Thông tin đặt phòng</h2>
+      <form id="booking-form">
+        <label for="customer">Khách hàng</label>
+        <select id="customer" required></select>
+
+        <label for="room">Phòng</label>
+        <select id="room" required></select>
+
+        <label for="check-in">Ngày nhận phòng</label>
+        <input id="check-in" type="date" required>
+
+        <label for="check-out">Ngày trả phòng</label>
+        <input id="check-out" type="date" required>
+
+        <button type="submit">Gửi yêu cầu đặt phòng</button>
+      </form>
+      <p id="booking-result" role="status"></p>
+    </section>
+  </main>
+
+  <footer>Hotel Booking System — SDM332</footer>
+
+  <script>
+    const api = path => fetch('/api/' + path);
+
+    async function loadRooms() {
+      const response = await api('rooms');
+      if (!response.ok) throw new Error('Không tải được danh sách phòng');
+      const rooms = await response.json();
+
+      document.getElementById('rooms').innerHTML = rooms.map(room => `
+        <article class="room">
+          <h3>${escapeHtml(room.name)} — ${escapeHtml(room.room_type)}</h3>
+          <p>Sức chứa: ${Number(room.capacity)} người</p>
+          <p class="price">${Number(room.price_per_night).toLocaleString('vi-VN')} đ/đêm</p>
+          <p>${room.available ? 'Còn phòng' : 'Tạm hết phòng'}</p>
+        </article>
+      `).join('');
+
+      document.getElementById('room').innerHTML = rooms
+        .filter(room => room.available)
+        .map(room => `<option value="${Number(room.id)}">${escapeHtml(room.name)} - ${escapeHtml(room.room_type)}</option>`)
+        .join('');
+    }
+
+    async function loadCustomers() {
+      const response = await api('customers');
+      if (!response.ok) throw new Error('Không tải được khách hàng');
+      const customers = await response.json();
+
+      document.getElementById('customer').innerHTML = customers.map(customer =>
+        `<option value="${Number(customer.id)}">${escapeHtml(customer.full_name)}</option>`
+      ).join('');
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;',
+        '"': '&quot;', "'": '&#39;'
+      })[char]);
+    }
+
+    async function initialize() {
+      try {
+        const health = await api('health');
+        if (!health.ok) throw new Error('API hoặc cơ sở dữ liệu chưa sẵn sàng');
+        const data = await health.json();
+        document.getElementById('connection').textContent =
+          'Trạng thái: ' + data.status + ' — Database: ' + data.database;
+
+        await Promise.all([loadRooms(), loadCustomers()]);
+      } catch (error) {
+        document.getElementById('connection').textContent =
+          'Chưa kết nối được hệ thống. Hãy kiểm tra các dịch vụ Docker.';
+        document.getElementById('rooms').textContent = error.message;
+      }
+    }
+
+    document.getElementById('booking-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const result = document.getElementById('booking-result');
+      const checkIn = document.getElementById('check-in').value;
+      const checkOut = document.getElementById('check-out').value;
+
+      if (checkOut <= checkIn) {
+        result.textContent = 'Ngày trả phòng phải sau ngày nhận phòng.';
+        return;
+      }
+
+      try {
+        const response = await api('bookings');
+        if (!response.ok) throw new Error('Không kiểm tra được hệ thống đặt phòng');
+
+        const booking = await fetch('/api/bookings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer_id: Number(document.getElementById('customer').value),
+            room_id: Number(document.getElementById('room').value),
+            check_in: checkIn,
+            check_out: checkOut
+          })
+        });
+
+        const data = await booking.json();
+        if (!booking.ok) throw new Error(data.error || 'Đặt phòng thất bại');
+
+        result.textContent = 'Đã tạo yêu cầu đặt phòng #' + data.id;
+      } catch (error) {
+        result.textContent = 'Lỗi: ' + error.message;
+      }
+    });
+
+    initialize();
+  </script>
+</body>
+</html>
